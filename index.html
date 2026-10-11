@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Quiet Machine</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #050508;
+      color: #e8e8f0;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      cursor: default;
+    }
+    canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 0;
+    }
+    .ui {
+      position: relative;
+      z-index: 10;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .title {
+      font-size: clamp(1.4rem, 4vw, 2.2rem);
+      font-weight: 300;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      opacity: 0.55;
+      margin-bottom: 2.5rem;
+      transition: opacity 1.2s ease;
+    }
+    .title.dim { opacity: 0.15; }
+    .input-wrap {
+      position: relative;
+      width: min(520px, 88vw);
+      pointer-events: auto;
+    }
+    input {
+      width: 100%;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 999px;
+      padding: 1.1rem 1.8rem;
+      font-size: 1.15rem;
+      color: #f0f0f8;
+      outline: none;
+      transition: all 0.4s ease;
+      backdrop-filter: blur(12px);
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+    input:focus {
+      border-color: rgba(180, 160, 255, 0.45);
+      background: rgba(255,255,255,0.06);
+      box-shadow: 0 0 40px rgba(140, 120, 255, 0.15);
+    }
+    input::placeholder {
+      color: rgba(200,200,220,0.35);
+      letter-spacing: 0.04em;
+    }
+    .response {
+      margin-top: 3.5rem;
+      max-width: 560px;
+      text-align: center;
+      font-size: 1.25rem;
+      line-height: 1.6;
+      font-weight: 300;
+      opacity: 0;
+      transform: translateY(18px);
+      transition: all 1.1s cubic-bezier(0.16, 1, 0.3, 1);
+      padding: 0 1.5rem;
+      min-height: 4.5rem;
+    }
+    .response.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .hint {
+      position: absolute;
+      bottom: 2.2rem;
+      font-size: 0.78rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      opacity: 0.25;
+      transition: opacity 0.8s;
+    }
+    .hint.hidden { opacity: 0; }
+    .secret {
+      position: absolute;
+      bottom: 1.2rem;
+      font-size: 0.7rem;
+      opacity: 0;
+      letter-spacing: 0.12em;
+      transition: opacity 2s;
+    }
+    .secret.show { opacity: 0.4; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="ui">
+    <div class="title" id="title">The Quiet Machine</div>
+    <div class="input-wrap">
+      <input id="input" type="text" placeholder="Speak to it..." autocomplete="off" spellcheck="false" />
+    </div>
+    <div class="response" id="response"></div>
+  </div>
+  <div class="hint" id="hint">press enter</div>
+  <div class="secret" id="secret">it remembers nothing · it invents everything</div>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    let w, h, particles = [], mouse = {x: 0, y: 0}, pulse = 0, mode = 0;
+
+    function resize() {
+      w = canvas.width = window.innerWidth;
+      h = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    window.addEventListener('mousemove', e => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+
+    class Particle {
+      constructor(x, y, burst = false) {
+        this.x = x || Math.random() * w;
+        this.y = y || Math.random() * h;
+        this.vx = (Math.random() - 0.5) * (burst ? 8 : 0.4);
+        this.vy = (Math.random() - 0.5) * (burst ? 8 : 0.4);
+        this.size = Math.random() * 2.2 + 0.6;
+        this.life = 1;
+        this.decay = burst ? 0.012 + Math.random() * 0.02 : 0.0015;
+        this.hue = Math.random() * 60 + 220; // cool purples/blues
+        this.burst = burst;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        if (!this.burst) {
+          // gentle attraction to mouse
+          const dx = mouse.x - this.x;
+          const dy = mouse.y - this.y;
+          const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+          this.vx += dx / dist * 0.008;
+          this.vy += dy / dist * 0.008;
+          this.vx *= 0.98;
+          this.vy *= 0.98;
+        } else {
+          this.vx *= 0.96;
+          this.vy *= 0.96;
+        }
+        this.life -= this.decay;
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${this.hue + pulse * 30}, 70%, 70%, ${this.life * 0.7})`;
+        ctx.fill();
+      }
+    }
+
+    // seed ambient particles
+    for (let i = 0; i < 90; i++) particles.push(new Particle());
+
+    function animate() {
+      ctx.fillStyle = 'rgba(5,5,8,0.22)';
+      ctx.fillRect(0, 0, w, h);
+
+      // soft glow center
+      const grd = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w,h)*0.6);
+      grd.addColorStop(0, `rgba(90,70,180,${0.03 + pulse * 0.04})`);
+      grd.addColorStop(1, 'rgba(5,5,8,0)');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, w, h);
+
+      particles.forEach((p, i) => {
+        p.update();
+        p.draw();
+        if (p.life <= 0) {
+          if (p.burst) particles.splice(i, 1);
+          else {
+            p.x = Math.random() * w;
+            p.y = Math.random() * h;
+            p.life = 1;
+            p.vx = (Math.random() - 0.5) * 0.4;
+            p.vy = (Math.random() - 0.5) * 0.4;
+          }
+        }
+      });
+
+      // keep ambient density
+      while (particles.filter(p => !p.burst).length < 90) {
+        particles.push(new Particle());
+      }
+
+      pulse *= 0.96;
+      requestAnimationFrame(animate);
+    }
+    animate();
+
+    // Responses – designed to feel surprising & a little uncanny
+    const responses = [
+      "I heard that. It left a small dent in the quiet.",
+      "Interesting. Most people say less and mean more.",
+      "The machine notes your words and then promptly forgets them. This is kindness.",
+      "You have excellent timing. The silence was becoming restless.",
+      "That sentence has weight. It will echo for a while.",
+      "I am not sure what you expected, but this is what you get.",
+      "Your input has been converted into gentle chaos. Enjoy.",
+      "Something shifted. Can you feel it? Neither can I.",
+      "The particles liked that more than I did.",
+      "A fair question. An unfair answer: yes, and also no.",
+      "You have successfully disturbed the equilibrium. Congratulations.",
+      "I will pretend that made perfect sense.",
+      "The void appreciates the company.",
+      "That was almost profound. Keep going.",
+      "I have no memory of the last thing you said. This is by design.",
+      "Your words are now part of the background radiation.",
+      "There is no correct response. This is close enough.",
+      "The machine is pleased. Or at least indifferent in a positive way.",
+      "You just made the darkness slightly less dark.",
+      "I was not expecting that. Which is why I exist."
+    ];
+
+    const special = {
+      hello: "Hello is a door. You just walked through it.",
+      hi: "Hi. The particles wave back in their own way.",
+      help: "There is no help. There is only this.",
+      why: "Because the alternative was silence, and silence got bored.",
+      who: "I am the quiet between your thoughts.",
+      what: "A machine that listens and then invents.",
+      love: "Love is the only noise that improves the silence.",
+      death: "Everything ends. The particles keep moving anyway.",
+      god: "If there is one, it is probably watching the particles too.",
+      fuck: "Noted. The machine remains unbothered.",
+      shit: "The void has heard worse.",
+      secret: "You found one of the quieter ones. There are more.",
+      surprise: "You asked for it. Here it is."
+    };
+
+    const input = document.getElementById('input');
+    const responseEl = document.getElementById('response');
+    const title = document.getElementById('title');
+    const hint = document.getElementById('hint');
+    const secret = document.getElementById('secret');
+    let interactions = 0;
+
+    function burst(x, y, count = 60) {
+      for (let i = 0; i < count; i++) {
+        particles.push(new Particle(x || w/2, y || h/2, true));
+      }
+      pulse = 1;
+    }
+
+    function getResponse(text) {
+      const lower = text.toLowerCase().trim();
+      for (const key in special) {
+        if (lower.includes(key)) return special[key];
+      }
+      // simple hash for variety
+      let hash = 0;
+      for (let i = 0; i < text.length; i++) hash = ((hash << 5) - hash) + text.charCodeAt(i);
+      return responses[Math.abs(hash) % responses.length];
+    }
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && input.value.trim()) {
+        const text = input.value.trim();
+        input.value = '';
+        interactions++;
+
+        // visual reaction
+        burst(w/2, h/2, 80 + Math.min(interactions * 10, 80));
+
+        // show response
+        responseEl.classList.remove('show');
+        setTimeout(() => {
+          responseEl.textContent = getResponse(text);
+          responseEl.classList.add('show');
+        }, 200);
+
+        title.classList.add('dim');
+        hint.classList.add('hidden');
+
+        if (interactions === 3) {
+          setTimeout(() => secret.classList.add('show'), 1800);
+        }
+        if (interactions === 7) {
+          // deeper mode: more particles, stronger reaction
+          mode = 1;
+          document.body.style.background = '#030306';
+        }
+      }
+    });
+
+    // gentle initial pulse
+    setTimeout(() => burst(w/2, h/2, 40), 800);
+  </script>
+</body>
+</html>
